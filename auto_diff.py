@@ -22,10 +22,8 @@ class Scalar(object):
         compute_graph = compute_graph[:self.graph_id + 1]
         self.grad = 1
         while len(compute_graph) > 0:
-            inputs, op, out = compute_graph.pop()
-            grads = op.backward(out.grad)
-            for x, dx in zip(inputs, grads):
-                x.grad += dx
+            op = compute_graph.pop()
+            op.backward()
 
     def register_id(self, graph_id):
         self.graph_id = graph_id
@@ -52,10 +50,14 @@ class Add(Function):
     """
 
     def forward(self, a, b):
-        return Scalar(a.value + b.value)
+        self.inputs = [a, b]
+        self.output = Scalar(a.value + b.value)
+        return self.output
 
-    def backward(self, grad_out):
-        return [grad_out, grad_out]
+    def backward(self):
+        df = self.output.grad
+        self.inputs[0].grad += df
+        self.inputs[1].grad += df
 
 
 class Cos(Function):
@@ -64,12 +66,14 @@ class Cos(Function):
     """
 
     def forward(self, a):
-        self.forward_values = a.value
-        return Scalar(np.cos(a.value))
+        self.inputs = a
+        self.output = Scalar(np.cos(a.value))
+        return self.output
 
-    def backward(self, grad_out):
-        a_val = self.forward_values
-        return [grad_out * -np.sin(a_val)]
+    def backward(self):
+        a_val = self.inputs.value
+        df = self.output.grad
+        self.inputs.grad += df * -np.sin(a_val)
 
 
 class Sin(Function):
@@ -78,12 +82,14 @@ class Sin(Function):
     """
 
     def forward(self, a):
-        self.forward_values = a.value
-        return Scalar(np.sin(a.value))
+        self.inputs = a
+        self.output = Scalar(np.sin(a.value))
+        return self.output
 
-    def backward(self, grad_out):
-        a_val = self.forward_values
-        return [grad_out * np.cos(a_val)]
+    def backward(self):
+        a_val = self.inputs.value
+        df = self.output.grad
+        self.inputs.grad += df * np.cos(a_val)
 
 
 class Log(Function):
@@ -92,12 +98,14 @@ class Log(Function):
     """
 
     def forward(self, a):
-        self.forward_values = a.value
-        return Scalar(np.log(a.value))
+        self.inputs = a
+        self.output = Scalar(np.log(a.value))
+        return self.output
 
-    def backward(self, grad_out):
-        a_val = self.forward_values
-        return [grad_out / a_val]
+    def backward(self):
+        a_val = self.inputs.value
+        df = self.output.grad
+        self.inputs.grad += df / a_val
 
 
 class Tan(Function):
@@ -106,12 +114,14 @@ class Tan(Function):
     """
 
     def forward(self, a):
-        self.forward_values = a.value
-        return Scalar(np.tan(a.value))
+        self.inputs = a
+        self.output = Scalar(np.tan(a.value))
+        return self.output
 
-    def backward(self, grad_out):
-        a_val = self.forward_values
-        return [grad_out / np.cos(a_val)**2]
+    def backward(self):
+        a_val = self.inputs.value
+        df = self.output.grad
+        self.inputs.grad += df / np.cos(a_val)**2
 
 
 class Exp(Function):
@@ -120,12 +130,14 @@ class Exp(Function):
     """
 
     def forward(self, a):
-        self.forward_values = a.value
-        return Scalar(np.exp(a.value))
+        self.inputs = a
+        self.output = Scalar(np.exp(a.value))
+        return self.output
 
-    def backward(self, grad_out):
-        a_val = self.forward_values
-        return [grad_out * np.exp(a_val)]
+    def backward(self):
+        a_val = self.inputs.value
+        df = self.output.grad
+        self.inputs.grad += df * np.exp(a_val)
 
 
 class Mul(Function):
@@ -134,73 +146,70 @@ class Mul(Function):
     """
 
     def forward(self, a, b):
-        self.forward_values = [a.value, b.value]
-        return Scalar(a.value * b.value)
+        self.inputs = [a, b]
+        self.output = Scalar(a.value * b.value)
+        return self.output
 
-    def backward(self, grad_out):
-        a_val, b_val = self.forward_values
-        return [b_val * grad_out, a_val * grad_out]
+    def backward(self):
+        a_val, b_val = [self.inputs[0].value, self.inputs[1].value]
+        df = self.output.grad
+        self.inputs[0].grad += df * b_val
+        self.inputs[1].grad += df * a_val
 
 
-def register_op(inputs, op, output):
+def register(op, output):
     graph_id = len(compute_graph)
-    compute_graph.append([inputs, op, output])
+    compute_graph.append(op)
+    output.register_id(graph_id)
     return graph_id
 
 
 def add(a, b):
     op = Add()
     out = op(a, b)
-    graph_id = register_op([a, b], op, out)
-    out.register_id(graph_id)
+    register(op, out)
     return out
 
 
 def mul(a, b):
     op = Mul()
     out = op(a, b)
-    graph_id = register_op([a, b], op, out)
-    out.register_id(graph_id)
+    register(op, out)
     return out
 
 
 def cos(a):
     op = Cos()
     out = op(a)
-    graph_id = register_op([a], op, out)
-    out.register_id(graph_id)
+    register(op, out)
     return out
 
 
 def sin(a):
     op = Sin()
     out = op(a)
-    graph_id = register_op([a], op, out)
-    out.register_id(graph_id)
+    register(op, out)
     return out
 
 
 def tan(a):
     op = Tan()
     out = op(a)
-    graph_id = register_op([a], op, out)
-    out.register_id(graph_id)
+    register(op, out)
     return out
 
 
 def log(a):
     op = Log()
     out = op(a)
-    graph_id = register_op([a], op, out)
-    out.register_id(graph_id)
+    register(op, out)
     return out
 
 
 def exp(a):
     op = Exp()
     out = op(a)
-    graph_id = register_op([a], op, out)
-    out.register_id(graph_id)
+    register(op, out)
     return out
 
 
